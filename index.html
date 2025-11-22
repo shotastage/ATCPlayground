@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Toyoko/Minatomirai ATC Sim Fixed</title>
+    <title>Toyoko/Minatomirai ATC Sim Sound</title>
     <style>
         :root {
             --bg-color: #1a1a1a;
@@ -25,14 +25,14 @@
             display: flex;
             flex-direction: column;
             overflow: hidden;
-            user-select: none; /* 文字選択防止 */
+            user-select: none;
         }
 
         /* --- 上部：路線図エリア --- */
         #route-info {
             flex: 2;
-            background: #fff;
-            color: #000;
+            background: #f0f0f0;
+            color: #333;
             position: relative;
             border-bottom: 4px solid #555;
             display: flex;
@@ -59,7 +59,7 @@
             width: 100%;
             margin-bottom: 5px;
         }
-        .st-name { font-size: 18px; font-weight: bold; }
+        .st-name { font-size: 18px; font-weight: bold; color: #222; }
         .st-name.next { font-size: 24px; }
         .st-label { font-size: 10px; color: #666; }
 
@@ -85,8 +85,9 @@
         #distance-info {
             text-align: right;
             font-family: monospace;
-            font-size: 16px;
+            font-size: 20px;
             font-weight: bold;
+            color: #333;
         }
 
         /* --- 中央：運転台 --- */
@@ -206,14 +207,14 @@
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.85);
+            background: rgba(0, 0, 0, 0.9);
             padding: 20px;
             border: 2px solid #fff;
             text-align: center;
             display: none;
             z-index: 100;
             border-radius: 8px;
-            min-width: 200px;
+            min-width: 240px;
         }
         #announcement h2 { margin: 0 0 10px 0; font-size: 20px; color: #fff; }
         #announcement p { color: #ccc; margin-bottom: 20px; }
@@ -227,12 +228,12 @@
             cursor: pointer;
         }
         
-        /* スコア表示 */
         #score-msg {
             color: #f1c40f;
             font-weight: bold;
             font-size: 18px;
             margin-top: 5px;
+            margin-bottom: 15px;
         }
     </style>
 </head>
@@ -282,12 +283,41 @@
 
     <div id="announcement">
         <h2 id="anno-title">元町・中華街 停車中</h2>
-        <p id="anno-desc">発車するにはボタンを押してください</p>
         <div id="score-msg"></div>
+        <p id="anno-desc">発車するにはボタンを押してください</p>
         <button id="depart-btn">出発進行</button>
     </div>
 
 <script>
+    // --- 音声合成 (Web Audio API) ---
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = new AudioContext();
+
+    // ATCベル「キーン」
+    function playATCChime() {
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+
+        const osc = audioCtx.createOscillator();
+        const gainNode = audioCtx.createGain();
+
+        osc.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+
+        // 音色の設定（高音のサイン波）
+        osc.type = 'sine';
+        // 周波数：2000Hz付近がATCの電子音っぽい
+        osc.frequency.setValueAtTime(2000, audioCtx.currentTime);
+        
+        // 音量（エンベロープ）：パッと鳴ってスッと消える
+        gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.5);
+
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.5);
+    }
+
     // --- データ ---
     const STATIONS = [
         { name: "元町・中華街", dist: 0, line: "みなとみらい線", color: "#00418e" },
@@ -361,7 +391,7 @@
         notch = 0;
         slider.value = 0;
         updateNotchDisplay(0);
-        scoreMsg.textContent = "";
+        if(index === 0) scoreMsg.textContent = "";
 
         if (index < STATIONS.length - 1) {
             const nextSt = STATIONS[index + 1];
@@ -377,6 +407,8 @@
             annoDesc.textContent = "発車するにはボタンを押してください";
             announceDiv.style.display = "block";
             departBtn.style.display = "inline-block";
+            
+            // 停車中は0表示だが、初期化時に音は鳴らさない
             atcLimit = 0; 
         } else {
             prevStName.textContent = STATIONS[index].name;
@@ -390,10 +422,18 @@
     }
 
     departBtn.addEventListener('click', () => {
+        // ブラウザの制限対策：ユーザアクションでAudioContextを再開
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+        
         isStopped = false;
+        scoreMsg.textContent = "";
         announceDiv.style.display = "none";
-        // 出発信号: 30からスタート
-        atcLimit = 30;
+        
+        // 出発時の信号変化で音を鳴らすため、わざと現在と違う値をセットして更新をかける
+        atcLimit = 0; 
+        updateATC(true); // 強制更新
     });
 
     slider.addEventListener('input', (e) => {
@@ -447,7 +487,6 @@
             else accel = notch * BRAKE_RATE;
         }
 
-        // ATC介入 (制限速度+2km/hでブレーキ)
         if (currentSpeed > atcLimit + 2) {
             isAtcBraking = true;
             if (accel > -4.0) accel = -4.0; 
@@ -463,42 +502,49 @@
         const speedMs = currentSpeed / 3.6;
         distanceToNext -= speedMs * dt;
 
-        // 停止判定 (速度が0で、かつ駅の近くなら停車とみなす)
-        if (currentSpeed === 0 && !isStopped && Math.abs(distanceToNext) < 50) {
-             // 残り距離がプラスなら手前、マイナスならオーバーラン
+        if (currentSpeed < 0.1 && notch <= 0 && !isStopped && Math.abs(distanceToNext) < 60) {
+             currentSpeed = 0;
              finishStationStop();
         }
     }
 
-    function updateATC() {
-        // ★修正ポイント: 残り距離が少なくなっても0にはせず、30km/hで進入させる
-        // 明らかに通り過ぎた(オーバーラン)場合のみ0にする
+    function updateATC(force = false) {
+        let newLimit = 110;
+
         if (distanceToNext <= -5) {
-            atcLimit = 0; 
+            newLimit = 0; 
         } else if (distanceToNext < 150) {
-            atcLimit = 30; // 進入速度
+            newLimit = 30;
         } else if (distanceToNext < 300) {
-            atcLimit = 55;
+            newLimit = 55;
         } else if (distanceToNext < 600) {
-            atcLimit = 75;
+            newLimit = 75;
         } else if (distanceToNext < 1000) {
-            atcLimit = 100;
+            newLimit = 100;
         } else {
-            atcLimit = 110;
+            newLimit = 110;
+        }
+
+        // 値が変わった瞬間だけ音を鳴らす
+        if (newLimit !== atcLimit || force) {
+            atcLimit = newLimit;
+            playATCChime();
         }
     }
 
     function finishStationStop() {
+        isStopped = true;
+        
         let dist = Math.floor(distanceToNext);
         let msg = "";
         let color = "";
 
-        if (Math.abs(dist) <= 2) {
-            msg = "定位置停車！素晴らしい！ (誤差 " + dist + "m)";
+        if (Math.abs(dist) <= 3) {
+            msg = "Great!! 定位置停車 (誤差 " + dist + "m)";
             color = "#2ecc71";
         } else if (dist > 0) {
             msg = "停車位置 手前 " + dist + "m";
-            color = "#f39c12";
+            color = "#f1c40f";
         } else {
             msg = "オーバーラン " + Math.abs(dist) + "m";
             color = "#e74c3c";
@@ -507,12 +553,9 @@
         scoreMsg.textContent = msg;
         scoreMsg.style.color = color;
         
-        // 少し待ってから次へ
         setTimeout(() => {
              setupStation(currentStationIndex + 1);
         }, 2000);
-        
-        isStopped = true;
     }
 
     function updateUI() {
@@ -526,13 +569,15 @@
         if(progress > 100) progress = 100;
         trainMarker.style.left = progress + "%";
         
-        // 残り距離表示
         let d = Math.floor(distanceToNext);
         distVal.textContent = d;
+        
         if (d > 0) {
-            distVal.style.color = "white";
+            distVal.style.color = "#222"; 
         } else if (d < 0) {
-            distVal.style.color = "red"; // オーバーラン警告色
+            distVal.style.color = "#c0392b"; 
+        } else {
+            distVal.style.color = "#222";
         }
 
         atcLimitDisplay.textContent = atcLimit;
@@ -554,7 +599,6 @@
 
         ctx.clearRect(0, 0, w, h);
 
-        // 背景
         ctx.beginPath();
         ctx.arc(cx, cy, r, 0, 2 * Math.PI);
         ctx.fillStyle = "#111";
