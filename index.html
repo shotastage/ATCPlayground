@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Toyoko/Minatomirai ATC Sim Fixed</title>
+    <style>
+        :root {
+            --bg-color: #1a1a1a;
+            --panel-color: #2c3e50;
+            --text-color: #ecf0f1;
+            --accent-color: #e74c3c;
+            --atc-active: #e67e22;
+            --mm-blue: #00418e;
+            --ty-red: #da0442;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            user-select: none; /* 文字選択防止 */
+        }
+
+        /* --- 上部：路線図エリア --- */
+        #route-info {
+            flex: 2;
+            background: #fff;
+            color: #000;
+            position: relative;
+            border-bottom: 4px solid #555;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            padding: 0 20px;
+        }
+        
+        #line-name {
+            font-size: 12px;
+            font-weight: bold;
+            color: #fff;
+            background: var(--mm-blue);
+            padding: 2px 8px;
+            border-radius: 4px;
+            align-self: flex-start;
+            margin-bottom: 10px;
+        }
+
+        .station-display {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            width: 100%;
+            margin-bottom: 5px;
+        }
+        .st-name { font-size: 18px; font-weight: bold; }
+        .st-name.next { font-size: 24px; }
+        .st-label { font-size: 10px; color: #666; }
+
+        .progress-track {
+            width: 100%;
+            height: 6px;
+            background: #ccc;
+            position: relative;
+            border-radius: 3px;
+            margin-bottom: 5px;
+        }
+        #train-marker {
+            position: absolute;
+            top: -7px;
+            left: 0%;
+            width: 20px;
+            height: 20px;
+            background: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23da0442"><path d="M12 2L2 22h20L12 2z"/></svg>') no-repeat center center;
+            background-size: contain;
+            transition: left 0.1s linear;
+            transform: translateX(-50%);
+        }
+        #distance-info {
+            text-align: right;
+            font-family: monospace;
+            font-size: 16px;
+            font-weight: bold;
+        }
+
+        /* --- 中央：運転台 --- */
+        #dashboard {
+            flex: 5;
+            background: #2c3e50;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            box-shadow: inset 0 0 30px #000;
+        }
+
+        #atc-indicator {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: #000;
+            padding: 5px 10px;
+            border: 2px solid #7f8c8d;
+            border-radius: 4px;
+            text-align: center;
+            width: 80px;
+        }
+        .atc-label { font-size: 10px; color: #aaa; }
+        #atc-limit-display {
+            font-size: 28px;
+            font-weight: bold;
+            color: var(--atc-active);
+            font-family: 'Courier New', monospace;
+        }
+        .atc-status {
+            margin-top: 2px;
+            font-size: 10px;
+            color: #333;
+            background: #111;
+            padding: 2px;
+        }
+        .atc-status.braking {
+            background: red;
+            color: white;
+            animation: blink 0.2s infinite alternate;
+        }
+        @keyframes blink { from { opacity: 1; } to { opacity: 0.5; } }
+
+        #speedometer-container {
+            position: relative;
+            width: 260px;
+            height: 260px;
+        }
+        canvas { width: 100%; height: 100%; }
+        
+        #digital-speed {
+            position: absolute;
+            bottom: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: 'Courier New', monospace;
+            font-size: 32px;
+            color: #0f0;
+            text-shadow: 0 0 5px #0f0;
+        }
+
+        /* --- 下部：マスコン --- */
+        #mascon-panel {
+            flex: 3;
+            background: #1e272e;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 10px;
+            border-top: 4px solid #000;
+        }
+        
+        #notch-display {
+            font-size: 30px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            padding: 5px 30px;
+            background: #000;
+            border: 2px solid #555;
+            border-radius: 4px;
+            min-width: 100px;
+            text-align: center;
+            font-family: monospace;
+        }
+        .notch-p { color: #3498db; text-shadow: 0 0 5px #3498db; }
+        .notch-n { color: #fff; }
+        .notch-b { color: #e67e22; text-shadow: 0 0 5px #e67e22; }
+        .notch-eb { color: #e74c3c; text-shadow: 0 0 10px #e74c3c; }
+
+        input[type=range] {
+            -webkit-appearance: none;
+            width: 95%;
+            height: 50px;
+            background: linear-gradient(to right, #c0392b 0%, #e67e22 40%, #95a5a6 50%, #3498db 60%, #2980b9 100%);
+            border-radius: 25px;
+            outline: none;
+            border: 4px solid #333;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 40px;
+            height: 60px;
+            border-radius: 10px;
+            background: #ecf0f1;
+            border: 2px solid #7f8c8d;
+            cursor: pointer;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+        }
+
+        /* ポップアップ */
+        #announcement {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.85);
+            padding: 20px;
+            border: 2px solid #fff;
+            text-align: center;
+            display: none;
+            z-index: 100;
+            border-radius: 8px;
+            min-width: 200px;
+        }
+        #announcement h2 { margin: 0 0 10px 0; font-size: 20px; color: #fff; }
+        #announcement p { color: #ccc; margin-bottom: 20px; }
+        #announcement button {
+            padding: 10px 20px;
+            font-size: 18px;
+            background: var(--accent-color);
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        /* スコア表示 */
+        #score-msg {
+            color: #f1c40f;
+            font-weight: bold;
+            font-size: 18px;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="route-info">
+        <div id="line-name">みなとみらい線</div>
+        <div class="station-display">
+            <div style="text-align: left;">
+                <div class="st-label">Current</div>
+                <div class="st-name" id="prev-station">---</div>
+            </div>
+            <div style="text-align: right;">
+                <div class="st-label">Next</div>
+                <div class="st-name next" id="next-station">元町・中華街</div>
+            </div>
+        </div>
+        <div class="progress-track">
+            <div id="train-marker"></div>
+        </div>
+        <div id="distance-info">残り <span id="dist-val">0</span> m</div>
+    </div>
+
+    <div id="dashboard">
+        <div id="atc-indicator">
+            <div class="atc-label">ATC</div>
+            <div id="atc-limit-display">0</div>
+            <div class="atc-status" id="atc-status">●</div>
+        </div>
+
+        <div id="speedometer-container">
+            <canvas id="gaugeCanvas" width="260" height="260"></canvas>
+            <div id="digital-speed">0</div>
+        </div>
+    </div>
+
+    <div id="mascon-panel">
+        <div id="notch-display" class="notch-n">N</div>
+        <input type="range" id="mascon-slider" min="-5" max="4" value="0" step="1">
+        <div style="display:flex; justify-content:space-between; width:95%; font-size:12px; color:#aaa; margin-top:5px;">
+            <span>EB</span>
+            <span>Brake</span>
+            <span>N</span>
+            <span>Power</span>
+        </div>
+    </div>
+
+    <div id="announcement">
+        <h2 id="anno-title">元町・中華街 停車中</h2>
+        <p id="anno-desc">発車するにはボタンを押してください</p>
+        <div id="score-msg"></div>
+        <button id="depart-btn">出発進行</button>
+    </div>
+
+<script>
+    // --- データ ---
+    const STATIONS = [
+        { name: "元町・中華街", dist: 0, line: "みなとみらい線", color: "#00418e" },
+        { name: "日本大通り", dist: 600, line: "みなとみらい線", color: "#00418e" },
+        { name: "馬車道", dist: 500, line: "みなとみらい線", color: "#00418e" },
+        { name: "みなとみらい", dist: 700, line: "みなとみらい線", color: "#00418e" },
+        { name: "新高島", dist: 600, line: "みなとみらい線", color: "#00418e" },
+        { name: "横浜", dist: 800, line: "東横線", color: "#da0442" },
+        { name: "反町", dist: 700, line: "東横線", color: "#da0442" },
+        { name: "東白楽", dist: 600, line: "東横線", color: "#da0442" },
+        { name: "白楽", dist: 600, line: "東横線", color: "#da0442" },
+        { name: "妙蓮寺", dist: 800, line: "東横線", color: "#da0442" },
+        { name: "菊名", dist: 1000, line: "東横線", color: "#da0442" },
+        { name: "大倉山", dist: 800, line: "東横線", color: "#da0442" },
+        { name: "綱島", dist: 1200, line: "東横線", color: "#da0442" },
+        { name: "日吉", dist: 1000, line: "東横線", color: "#da0442" },
+        { name: "元住吉", dist: 800, line: "東横線", color: "#da0442" },
+        { name: "武蔵小杉", dist: 900, line: "東横線", color: "#da0442" },
+        { name: "新丸子", dist: 500, line: "東横線", color: "#da0442" },
+        { name: "多摩川", dist: 800, line: "東横線", color: "#da0442" },
+        { name: "田園調布", dist: 600, line: "東横線", color: "#da0442" },
+        { name: "自由が丘", dist: 1000, line: "東横線", color: "#da0442" },
+        { name: "都立大学", dist: 900, line: "東横線", color: "#da0442" },
+        { name: "学芸大学", dist: 900, line: "東横線", color: "#da0442" },
+        { name: "祐天寺", dist: 800, line: "東横線", color: "#da0442" },
+        { name: "中目黒", dist: 900, line: "東横線", color: "#da0442" },
+        { name: "代官山", dist: 600, line: "東横線", color: "#da0442" },
+        { name: "渋谷", dist: 1000, line: "東横線", color: "#da0442" }
+    ];
+
+    const MAX_SPEED_METER = 120; 
+    const ACCEL_RATE = 3.5 / 4; 
+    const BRAKE_RATE = 4.5 / 4; 
+    const EB_RATE = 8.0;
+    const FRICTION = 0.03;
+
+    let currentStationIndex = 0;
+    let distanceToNext = 0;
+    let totalSectionDist = 0;
+    let currentSpeed = 0;
+    let notch = 0;
+    let atcLimit = 0;
+    let isAtcBraking = false;
+    let isStopped = true;
+
+    const canvas = document.getElementById('gaugeCanvas');
+    const ctx = canvas.getContext('2d');
+    const slider = document.getElementById('mascon-slider');
+    const notchDisplay = document.getElementById('notch-display');
+    const digitalSpeed = document.getElementById('digital-speed');
+    const trainMarker = document.getElementById('train-marker');
+    const distVal = document.getElementById('dist-val');
+    const atcLimitDisplay = document.getElementById('atc-limit-display');
+    const atcStatus = document.getElementById('atc-status');
+    const prevStName = document.getElementById('prev-station');
+    const nextStName = document.getElementById('next-station');
+    const lineName = document.getElementById('line-name');
+    const announceDiv = document.getElementById('announcement');
+    const annoTitle = document.getElementById('anno-title');
+    const annoDesc = document.getElementById('anno-desc');
+    const departBtn = document.getElementById('depart-btn');
+    const scoreMsg = document.getElementById('score-msg');
+
+    // --- 初期化 ---
+    setupStation(0);
+
+    function setupStation(index) {
+        currentStationIndex = index;
+        isStopped = true;
+        currentSpeed = 0;
+        notch = 0;
+        slider.value = 0;
+        updateNotchDisplay(0);
+        scoreMsg.textContent = "";
+
+        if (index < STATIONS.length - 1) {
+            const nextSt = STATIONS[index + 1];
+            distanceToNext = nextSt.dist;
+            totalSectionDist = nextSt.dist;
+            
+            prevStName.textContent = STATIONS[index].name;
+            nextStName.textContent = nextSt.name;
+            lineName.textContent = nextSt.line;
+            lineName.style.backgroundColor = nextSt.color;
+            
+            annoTitle.textContent = STATIONS[index].name + " 停車中";
+            annoDesc.textContent = "発車するにはボタンを押してください";
+            announceDiv.style.display = "block";
+            departBtn.style.display = "inline-block";
+            atcLimit = 0; 
+        } else {
+            prevStName.textContent = STATIONS[index].name;
+            nextStName.textContent = "終点";
+            annoTitle.textContent = "渋谷 到着！";
+            annoDesc.textContent = "全区間走破お疲れ様でした。";
+            departBtn.style.display = "none";
+            announceDiv.style.display = "block";
+        }
+        updateUI();
+    }
+
+    departBtn.addEventListener('click', () => {
+        isStopped = false;
+        announceDiv.style.display = "none";
+        // 出発信号: 30からスタート
+        atcLimit = 30;
+    });
+
+    slider.addEventListener('input', (e) => {
+        notch = parseInt(e.target.value);
+        updateNotchDisplay(notch);
+    });
+
+    function updateNotchDisplay(val) {
+        let text = "N";
+        let className = "notch-n";
+        if (val > 0) {
+            text = "P" + val;
+            className = "notch-p";
+        } else if (val < 0) {
+            if (val === -5) {
+                text = "EB";
+                className = "notch-eb";
+            } else {
+                text = "B" + Math.abs(val);
+                className = "notch-b";
+            }
+        }
+        notchDisplay.textContent = text;
+        notchDisplay.className = "";
+        notchDisplay.classList.add(className);
+    }
+
+    // --- メインループ ---
+    let lastTime = performance.now();
+    requestAnimationFrame(gameLoop);
+
+    function gameLoop(time) {
+        const dt = (time - lastTime) / 1000;
+        lastTime = time;
+
+        if (!isStopped) {
+            updatePhysics(dt);
+            updateATC();
+        }
+        drawGauge();
+        updateUI();
+        requestAnimationFrame(gameLoop);
+    }
+
+    function updatePhysics(dt) {
+        let accel = 0;
+        if (notch > 0) {
+            accel = notch * ACCEL_RATE; 
+        } else if (notch < 0) {
+            if (notch === -5) accel = -EB_RATE;
+            else accel = notch * BRAKE_RATE;
+        }
+
+        // ATC介入 (制限速度+2km/hでブレーキ)
+        if (currentSpeed > atcLimit + 2) {
+            isAtcBraking = true;
+            if (accel > -4.0) accel = -4.0; 
+        } else {
+            isAtcBraking = false;
+        }
+
+        if (currentSpeed > 0) accel -= FRICTION;
+
+        currentSpeed += accel * dt;
+        if (currentSpeed < 0) currentSpeed = 0;
+
+        const speedMs = currentSpeed / 3.6;
+        distanceToNext -= speedMs * dt;
+
+        // 停止判定 (速度が0で、かつ駅の近くなら停車とみなす)
+        if (currentSpeed === 0 && !isStopped && Math.abs(distanceToNext) < 50) {
+             // 残り距離がプラスなら手前、マイナスならオーバーラン
+             finishStationStop();
+        }
+    }
+
+    function updateATC() {
+        // ★修正ポイント: 残り距離が少なくなっても0にはせず、30km/hで進入させる
+        // 明らかに通り過ぎた(オーバーラン)場合のみ0にする
+        if (distanceToNext <= -5) {
+            atcLimit = 0; 
+        } else if (distanceToNext < 150) {
+            atcLimit = 30; // 進入速度
+        } else if (distanceToNext < 300) {
+            atcLimit = 55;
+        } else if (distanceToNext < 600) {
+            atcLimit = 75;
+        } else if (distanceToNext < 1000) {
+            atcLimit = 100;
+        } else {
+            atcLimit = 110;
+        }
+    }
+
+    function finishStationStop() {
+        let dist = Math.floor(distanceToNext);
+        let msg = "";
+        let color = "";
+
+        if (Math.abs(dist) <= 2) {
+            msg = "定位置停車！素晴らしい！ (誤差 " + dist + "m)";
+            color = "#2ecc71";
+        } else if (dist > 0) {
+            msg = "停車位置 手前 " + dist + "m";
+            color = "#f39c12";
+        } else {
+            msg = "オーバーラン " + Math.abs(dist) + "m";
+            color = "#e74c3c";
+        }
+
+        scoreMsg.textContent = msg;
+        scoreMsg.style.color = color;
+        
+        // 少し待ってから次へ
+        setTimeout(() => {
+             setupStation(currentStationIndex + 1);
+        }, 2000);
+        
+        isStopped = true;
+    }
+
+    function updateUI() {
+        digitalSpeed.textContent = Math.floor(currentSpeed);
+        
+        let progress = 0;
+        if (totalSectionDist > 0) {
+            progress = 100 - (distanceToNext / totalSectionDist * 100);
+        }
+        if(progress < 0) progress = 0;
+        if(progress > 100) progress = 100;
+        trainMarker.style.left = progress + "%";
+        
+        // 残り距離表示
+        let d = Math.floor(distanceToNext);
+        distVal.textContent = d;
+        if (d > 0) {
+            distVal.style.color = "white";
+        } else if (d < 0) {
+            distVal.style.color = "red"; // オーバーラン警告色
+        }
+
+        atcLimitDisplay.textContent = atcLimit;
+        if (isAtcBraking) {
+            atcStatus.classList.add('braking');
+            atcStatus.textContent = "ATC BRAKE";
+        } else {
+            atcStatus.classList.remove('braking');
+            atcStatus.textContent = "NORMAL";
+        }
+    }
+
+    function drawGauge() {
+        const w = canvas.width;
+        const h = canvas.height;
+        const cx = w / 2;
+        const cy = h / 2;
+        const r = w / 2 - 15;
+
+        ctx.clearRect(0, 0, w, h);
+
+        // 背景
+        ctx.beginPath();
+        ctx.arc(cx, cy, r, 0, 2 * Math.PI);
+        ctx.fillStyle = "#111";
+        ctx.fill();
+        ctx.strokeStyle = "#333";
+        ctx.lineWidth = 5;
+        ctx.stroke();
+
+        const startAngle = 135 * (Math.PI / 180);
+        const endAngle = 405 * (Math.PI / 180);
+
+        for (let i = 0; i <= MAX_SPEED_METER; i += 10) {
+            const angle = startAngle + (i / MAX_SPEED_METER) * (endAngle - startAngle);
+            const isMain = (i % 20 === 0);
+            const len = isMain ? 15 : 8;
+
+            const p1x = cx + Math.cos(angle) * (r - len);
+            const p1y = cy + Math.sin(angle) * (r - len);
+            const p2x = cx + Math.cos(angle) * r;
+            const p2y = cy + Math.sin(angle) * r;
+
+            ctx.beginPath();
+            ctx.moveTo(p1x, p1y);
+            ctx.lineTo(p2x, p2y);
+            ctx.strokeStyle = isMain ? "#fff" : "#666";
+            ctx.lineWidth = isMain ? 3 : 1;
+            ctx.stroke();
+
+            if (isMain) {
+                const tx = cx + Math.cos(angle) * (r - 35);
+                const ty = cy + Math.sin(angle) * (r - 35);
+                ctx.fillStyle = "#ddd";
+                ctx.font = "14px Arial";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText(i, tx, ty);
+            }
+        }
+
+        // ATCマーカー
+        const atcAngle = startAngle + (atcLimit / MAX_SPEED_METER) * (endAngle - startAngle);
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(atcAngle);
+        ctx.beginPath();
+        ctx.moveTo(r - 45, 0);
+        ctx.lineTo(r - 55, -6);
+        ctx.lineTo(r - 55, 6);
+        ctx.fillStyle = "#e67e22";
+        ctx.fill();
+        ctx.restore();
+
+        // 針
+        const speedAngle = startAngle + (currentSpeed / MAX_SPEED_METER) * (endAngle - startAngle);
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(speedAngle);
+        ctx.beginPath();
+        ctx.moveTo(-10, 0);
+        ctx.lineTo(r - 10, 0);
+        ctx.strokeStyle = "#fff";
+        ctx.lineWidth = 4;
+        ctx.lineCap = "round";
+        ctx.shadowBlur = 5;
+        ctx.shadowColor = "white";
+        ctx.stroke();
+        ctx.restore();
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, 8, 0, 2 * Math.PI);
+        ctx.fillStyle = "#555";
+        ctx.fill();
+    }
+</script>
+</body>
+</html>
