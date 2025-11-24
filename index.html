@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Tokyu 5050 Series ATC Sim (Type Select)</title>
+    <title>Tokyu 5050 ATC Sim (Layout Fix)</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Noto+Sans+JP:wght@400;700&display=swap');
 
@@ -104,7 +104,7 @@
         canvas { width: 100%; height: 100%; }
 
         #center-speed {
-            position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;
+            position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); text-align: center;
         }
         #digital-val {
             font-family: 'Share Tech Mono', monospace; font-size: 60px; color: #fff;
@@ -112,15 +112,45 @@
         }
         #unit-label { font-size: 14px; color: #aaa; margin-top: -5px; }
 
+        /* --- 改良版: ATCランプボックス --- 
+           配置を左上から「下部中央」に変更し、横並びにしました */
         #atc-lamp-box {
-            position: absolute; top: 20px; left: 20px; display: flex; flex-direction: column; gap: 5px;
+            position: absolute; 
+            bottom: 15px; 
+            left: 50%; 
+            transform: translateX(-50%);
+            display: flex; 
+            flex-direction: row; /* 横並び */
+            gap: 10px;
+            width: 80%;
+            justify-content: center;
         }
         .indicator-lamp {
-            width: 80px; padding: 4px; font-size: 12px; text-align: center;
-            background: #222; color: #555; border: 1px solid #444; border-radius: 4px; font-weight: bold;
+            flex: 1;
+            padding: 6px 0; 
+            font-size: 14px; 
+            text-align: center;
+            background: #111; 
+            color: #444; 
+            border: 1px solid #333; 
+            border-radius: 4px; 
+            font-weight: bold;
+            font-family: 'Share Tech Mono', monospace;
+            transition: all 0.1s;
         }
-        .indicator-lamp.active { background: #da0442; color: #fff; box-shadow: 0 0 10px #da0442; border-color: #ff5e89; }
-        .indicator-lamp.active-green { background: #2ecc71; color: #fff; box-shadow: 0 0 10px #2ecc71; border-color: #27ae60; }
+        /* ランプ点灯時の色調整 */
+        .indicator-lamp.active { 
+            background: #da0442; color: #fff; 
+            box-shadow: 0 0 8px #da0442; border-color: #ff5e89; 
+        }
+        .indicator-lamp.active-green { 
+            background: #27ae60; color: #fff; 
+            box-shadow: 0 0 8px #27ae60; border-color: #2ecc71; 
+        }
+        .indicator-lamp.active-orange { 
+            background: #e67e22; color: #fff; 
+            box-shadow: 0 0 8px #e67e22; border-color: #f39c12; 
+        }
 
         /* --- マスコン --- */
         #mascon-area {
@@ -151,7 +181,7 @@
         #overlay {
             position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: rgba(0,0,0,0.85); z-index: 100;
-            display: none; /* 初期は非表示(タイトル画面が上) */
+            display: none; 
             flex-direction: column; align-items: center; justify-content: center; text-align: center;
         }
         #overlay h2 { font-size: 24px; margin-bottom: 10px; color: #fff; }
@@ -200,6 +230,7 @@
                 <div id="digital-val">0</div>
                 <div id="unit-label">km/h</div>
             </div>
+            
             <div id="atc-lamp-box">
                 <div class="indicator-lamp" id="lamp-atc">ATC</div>
                 <div class="indicator-lamp" id="lamp-p">P</div>
@@ -227,16 +258,13 @@
     </div>
 
 <script>
-    // --- 全駅データ（区間距離は概算） ---
-    // dist: 「前の駅からこの駅までの距離」
-    // stopFlags: { local:true, exp:true, com:true, ltd:true }
-    
+    // --- 全駅データ ---
     const RAW_STATIONS = [
         { name: "元町・中華街", dist: 0,    line: "みなとみらい線", color: "#00418e", stops: {local:1, exp:1, com:1, ltd:1} },
-        { name: "日本大通り",   dist: 800,  line: "みなとみらい線", color: "#00418e", stops: {local:1, exp:1, com:1, ltd:0} }, // 特急通過
+        { name: "日本大通り",   dist: 800,  line: "みなとみらい線", color: "#00418e", stops: {local:1, exp:1, com:1, ltd:0} },
         { name: "馬車道",       dist: 600,  line: "みなとみらい線", color: "#00418e", stops: {local:1, exp:1, com:1, ltd:0} },
         { name: "みなとみらい", dist: 700,  line: "みなとみらい線", color: "#00418e", stops: {local:1, exp:1, com:1, ltd:1} },
-        { name: "新高島",       dist: 800,  line: "みなとみらい線", color: "#00418e", stops: {local:1, exp:0, com:0, ltd:0} }, // 急行通過
+        { name: "新高島",       dist: 800,  line: "みなとみらい線", color: "#00418e", stops: {local:1, exp:0, com:0, ltd:0} },
         { name: "横浜",         dist: 1000, line: "東横線",       color: "#da0442", stops: {local:1, exp:1, com:1, ltd:1} },
         { name: "反町",         dist: 1000, line: "東横線",       color: "#da0442", stops: {local:1, exp:0, com:0, ltd:0} },
         { name: "東白楽",       dist: 800,  line: "東横線",       color: "#da0442", stops: {local:1, exp:0, com:0, ltd:0} },
@@ -244,8 +272,8 @@
         { name: "妙蓮寺",       dist: 1000, line: "東横線",       color: "#da0442", stops: {local:1, exp:0, com:0, ltd:0} },
         { name: "菊名",         dist: 1200, line: "東横線",       color: "#da0442", stops: {local:1, exp:1, com:1, ltd:1} },
         { name: "大倉山",       dist: 1000, line: "東横線",       color: "#da0442", stops: {local:1, exp:0, com:0, ltd:0} },
-        { name: "綱島",         dist: 1500, line: "東横線",       color: "#da0442", stops: {local:1, exp:1, com:0, ltd:0} }, // 急行停車、特急通過
-        { name: "日吉",         dist: 1200, line: "東横線",       color: "#da0442", stops: {local:1, exp:1, com:1, ltd:0} }, // 通特停車、特急通過
+        { name: "綱島",         dist: 1500, line: "東横線",       color: "#da0442", stops: {local:1, exp:1, com:0, ltd:0} },
+        { name: "日吉",         dist: 1200, line: "東横線",       color: "#da0442", stops: {local:1, exp:1, com:1, ltd:0} },
         { name: "元住吉",       dist: 1000, line: "東横線",       color: "#da0442", stops: {local:1, exp:0, com:0, ltd:0} },
         { name: "武蔵小杉",     dist: 1100, line: "東横線",       color: "#da0442", stops: {local:1, exp:1, com:1, ltd:1} },
         { name: "新丸子",       dist: 600,  line: "東横線",       color: "#da0442", stops: {local:1, exp:0, com:0, ltd:0} },
@@ -260,11 +288,9 @@
         { name: "渋谷",         dist: 1200, line: "東横線",       color: "#da0442", stops: {local:1, exp:1, com:1, ltd:1} }
     ];
 
-    // ゲームで使用する駅リスト（選択された種別に基づいて構築）
     let gameStations = [];
     let currentType = 'local';
 
-    // ATCパターン [距離, 制限]
     const ATC_PATTERN = [
         { d: 15, v: 0 }, { d: 100, v: 30 }, { d: 200, v: 45 }, { d: 300, v: 55 }, 
         { d: 450, v: 65 }, { d: 600, v: 80 }, { d: 900, v: 100 }, { d: 99999, v: 110 }
@@ -333,26 +359,17 @@
     const btnStart = document.getElementById('btn-start');
     const scoreDisp = document.getElementById('score-display');
 
-    // --- 種別選択処理 ---
     function selectType(type) {
         currentType = type;
-        
-        // 停車駅リストの構築
-        // 通過駅の距離は、次の停車駅までの距離に加算する
         gameStations = [];
         let accumDist = 0;
 
-        // 始発駅を追加
         gameStations.push({ ...RAW_STATIONS[0], dist: 0 });
 
-        // 2駅目以降をスキャン
         for (let i = 1; i < RAW_STATIONS.length; i++) {
             const st = RAW_STATIONS[i];
-            
-            // 区間距離を加算
             accumDist += st.dist;
 
-            // 停車判定
             let isStop = false;
             if (type === 'local' && st.stops.local) isStop = true;
             if (type === 'express' && st.stops.exp) isStop = true;
@@ -360,13 +377,11 @@
             if (type === 'ltd_exp' && st.stops.ltd) isStop = true;
 
             if (isStop) {
-                // 停車駅ならリストに追加。距離は「前の停車駅からここまでの累積距離」とする
                 gameStations.push({ ...st, dist: accumDist });
-                accumDist = 0; // リセット
+                accumDist = 0; 
             }
         }
 
-        // UI更新
         let typeName = "";
         let typeColor = "";
         switch(type) {
@@ -378,12 +393,10 @@
         typeBadge.textContent = typeName;
         typeBadge.style.background = typeColor;
 
-        // タイトルを消してゲーム開始
         titleScreen.style.display = 'none';
         setupStation(0);
     }
 
-    // --- ゲーム開始 ---
     btnStart.addEventListener('click', () => {
         if(!audioCtx) initAudio();
         overlay.style.display = 'none';
@@ -406,13 +419,13 @@
     function updateNotchUI(val) {
         let txt = "N";
         let cls = "n-n";
-        lampB.classList.remove('active');
+        lampB.classList.remove('active-orange');
         
         if(val > 0) {
             txt = "P" + val;
             cls = "n-p";
         } else if (val < 0) {
-            lampB.classList.add('active');
+            lampB.classList.add('active-orange'); // Bランプ オレンジ点灯
             if (val === -5) {
                 txt = "EB";
                 cls = "n-eb";
@@ -549,12 +562,14 @@
         if(p < 0) p = 0; if(p > 100) p = 100;
         elDistBar.style.width = p + "%";
 
+        // ATC作動ランプ
         if(isAtcBrake) {
             lampAtc.classList.add('active');
         } else {
             lampAtc.classList.remove('active');
         }
 
+        // パターン接近ランプ(P)
         if (nextAtcLimit < atcLimit && speed > nextAtcLimit) {
             lampP.classList.add('active-green');
         } else {
@@ -564,9 +579,14 @@
 
     function draw() {
         ctx.clearRect(0, 0, cvs.width, cvs.height);
-        const cx = cvs.width / 2, cy = cvs.height / 2, r = 140;
+        const cx = cvs.width / 2, cy = cvs.height / 2;
+        
+        // ★修正点：半径を少し小さくして余白を作る (140 -> 125)
+        const r = 125; 
+
         const startDeg = 135, endDeg = 405, toRad = Math.PI / 180;
 
+        // 目盛り
         for (let i = 0; i <= MAX_SPEED_DISPLAY; i += 2) {
             const ratio = i / MAX_SPEED_DISPLAY;
             const deg = startDeg + ratio * (endDeg - startDeg);
@@ -600,12 +620,15 @@
             }
         }
 
+        // 前方予告(Next Limit)
         if (nextAtcLimit < atcLimit && nextAtcLimit >= 0) {
             drawTriangle(cx, cy, r, nextAtcLimit, false);
         }
 
+        // 現在ATC(Current Limit)
         drawTriangle(cx, cy, r, atcLimit, true);
 
+        // 超過帯
         if (speed > atcLimit) {
             const limRatio = atcLimit / MAX_SPEED_DISPLAY;
             const spdRatio = Math.min(speed, MAX_SPEED_DISPLAY) / MAX_SPEED_DISPLAY;
@@ -618,6 +641,7 @@
             ctx.stroke();
         }
 
+        // 針
         const spdRatio = speed / MAX_SPEED_DISPLAY;
         const spdDeg = startDeg + spdRatio * (endDeg - startDeg);
         const spdRad = spdDeg * toRad;
@@ -635,6 +659,7 @@
         ctx.stroke();
         ctx.restore();
 
+        // 中心
         ctx.beginPath();
         ctx.arc(cx, cy, 8, 0, Math.PI * 2);
         ctx.fillStyle = "#333";
@@ -652,6 +677,7 @@
         ctx.translate(cx, cy);
         ctx.rotate(rad);
         ctx.beginPath();
+        // 外側から内側へ向く三角
         ctx.moveTo(r + 5, 0);
         ctx.lineTo(r + 25, -10);
         ctx.lineTo(r + 25, 10);
